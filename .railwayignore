@@ -1,0 +1,55 @@
+# Railway Ignore File
+# Files and directories that should not be uploaded to Railway
+
+# Git
+.git
+.gitignore
+
+# Dependencies
+node_modules/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+*.log
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# Documentation (not needed in production)
+*.md
+!README.md
+docs/
+
+# Development files
+docker-compose.yml
+Dockerfile
+.dockerignore
+.env.example
+
+# Build artifacts (will be rebuilt)
+dist/
+build/
+*.egg-info/
+
+# Frontend source (only applies to backend deployment)
+frontend/
+
+# Backend source (only applies to frontend deployment)
+backend/

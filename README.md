@@ -195,7 +195,34 @@ OpenBioBench is a **React + FastAPI** application. Streamlit is not required or 
 | **AWS/GCP/Azure**    | Enterprise scale                       |
 | **Vercel + Railway** | Frontend on Vercel, Backend on Railway |
 
-### Production Deployment
+### Railway Deployment (Recommended for Cloud)
+
+OpenBioBench includes automated Railway configuration for seamless cloud deployment.
+
+#### Quick Deploy
+
+```bash
+# Install Railway CLI
+npm install -g @railway/cli
+
+# Run deployment script
+.\deploy-railway.ps1
+```
+
+#### Manual Setup
+
+See [`RAILWAY.md`](RAILWAY.md) for detailed deployment instructions.
+
+#### What Gets Deployed
+
+- ✅ FastAPI backend with automatic migrations
+- ✅ React frontend with production build
+- ✅ PostgreSQL database (managed by Railway)
+- ✅ Redis cache (managed by Railway)
+- ✅ Automatic SSL certificates
+- ✅ Health checks and auto-restart
+
+### Docker Production Deployment
 
 ```bash
 # Build frontend for production

@@ -1,0 +1,39 @@
+services:
+  # Backend API Service
+  - type: web
+    name: openbiobench-backend
+    runtime: python
+    buildCommand: cd backend && pip install -r requirements.txt
+    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: openbiobench-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: 30
+      - key: CORS_ORIGINS
+        value: '["https://openbiobench-frontend.onrender.com"]'
+      - key: PYTHON_VERSION
+        value: 3.10.0
+    healthCheckPath: /api/health
+
+  # Frontend Service
+  - type: web
+    name: openbiobench-frontend
+    runtime: node
+    buildCommand: cd frontend && npm install && npm run build
+    startCommand: cd frontend && npm run preview -- --host --port $PORT
+    envVars:
+      - key: VITE_API_URL
+        value: https://openbiobench-backend.onrender.com
+      - key: NODE_VERSION
+        value: 18.0.0
+
+# Database
+databases:
+  - name: openbiobench-db
+    databaseName: openbiobench
+    user: openbiobench_user
