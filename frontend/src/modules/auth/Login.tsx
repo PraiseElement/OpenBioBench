@@ -26,14 +26,14 @@ export const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-secondary-50">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-slate-800">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
             <FlaskConical className="h-16 w-16 text-primary-600" />
           </div>
-          <h1 className="text-3xl font-bold text-slate-900">OpenBioBench</h1>
-          <p className="text-slate-600 mt-2">Computational Biology & Drug Discovery Platform</p>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100">OpenBioBench</h1>
+          <p className="text-slate-600 dark:text-slate-400 mt-2">Computational Biology & Drug Discovery Platform</p>
         </div>
 
         <div className="card">
