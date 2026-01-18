@@ -1,5 +1,5 @@
-# Nixpacks Configuration for Frontend
-# This file tells Railway how to build the React frontend
+# Railway Frontend Configuration
+# This tells Railway this is the frontend service
 
 [phases.setup]
 nixPkgs = ["nodejs-18_x"]
