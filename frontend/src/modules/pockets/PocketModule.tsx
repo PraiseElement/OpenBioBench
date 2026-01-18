@@ -109,9 +109,9 @@ export const PocketModule: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
       {/* Header */}
-      <header className="bg-white border-b">
+      <header className="bg-white dark:bg-slate-800 border-b dark:border-slate-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center space-x-4">
             <Link to="/" className="text-slate-600 hover:text-slate-900">
@@ -120,8 +120,8 @@ export const PocketModule: React.FC = () => {
             <div className="flex items-center space-x-3">
               <Target className="h-8 w-8 text-orange-600" />
               <div>
-                <h1 className="text-2xl font-bold text-slate-900">Pocket Detection</h1>
-                <p className="text-sm text-slate-600">Binding Site Identification & Druggability</p>
+                <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Pocket Detection</h1>
+                <p className="text-sm text-slate-600 dark:text-slate-400">Binding Site Identification & Druggability</p>
               </div>
             </div>
           </div>
