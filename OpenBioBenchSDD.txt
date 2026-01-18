@@ -1,0 +1,2090 @@
+# Software Development Document: Integrated Computational Biology & Drug Discovery Platform
+
+**Document Version:** 1.0  
+**Target Implementation:** Production-grade web platform  
+**Primary Use:** AI-assisted development specification
+
+---
+
+## 1. Executive Summary & Scientific Rationale
+
+This platform addresses fragmentation in computational biology workflows where researchers currently operate across disconnected tools (Galaxy, PyMOL, AutoDock, standalone R scripts, commercial suites). The system unifies sequence analysis, structural biology, molecular modeling, and drug discovery into a single reproducible environment while maintaining scientific rigor equivalent to domain-specific tools.
+
+**Core Value Proposition:**
+- Single sign-on access to 10+ computational domains
+- End-to-end traceability from sequence to druggability prediction
+- Workflow versioning and provenance tracking
+- Institutional-scale compute with researcher-friendly abstractions
+
+**Scientific Scope:**
+The platform serves hypothesis generation and computational screening, not clinical decision-making. All predictions include uncertainty quantification and literature context.
+
+---
+
+## 2. Intended Users & Use-Case Taxonomy
+
+### Primary User Personas
+
+**Structural Biologist**
+- Needs: Protein structure analysis, binding site characterization, comparative modeling
+- Entry point: PDB/AlphaFold ID → pocket analysis → druggability assessment
+
+**Medicinal Chemist**
+- Needs: Virtual screening, ADMET profiling, hit-to-lead optimization
+- Entry point: Target structure + compound library → docking → filtering workflow
+
+**Computational Biologist**
+- Needs: Phylogenetic analysis, sequence conservation, evolutionary modeling
+- Entry point: FASTA sequences → alignment → tree construction → publication-ready figures
+
+**Bioinformatics Core Facility**
+- Needs: Multi-user environments, batch processing, standardized protocols
+- Entry point: Admin dashboard → workflow templates → compute allocation
+
+### Use-Case Classification
+
+**Tier 1 (Core Flows):**
+1. Target structure → binding pocket detection → druggability scoring
+2. Sequence set → alignment → phylogeny → conservation mapping
+3. Protein-ligand pair → docking → pose analysis → MD validation
+4. Compound library → ADMET screening → structure-based filtering
+
+**Tier 2 (Advanced):**
+5. Multi-target docking campaigns with comparative analysis
+6. Homology modeling → pocket prediction → virtual screening
+7. Trajectory analysis → binding free energy → stability metrics
+8. Integrated decision support (all modules → ranked candidate report)
+
+---
+
+## 3. Platform Scope & Scientific Boundaries
+
+### Included Capabilities
+
+**Computation:**
+- Sequence alignment (local, global, multiple)
+- Phylogenetic inference (ML, NJ, UPGMA)
+- Molecular docking (rigid/flexible receptor)
+- MD trajectory processing and analysis
+- Property prediction (logP, solubility, hERG, BBB permeability)
+
+**Data Integration:**
+- Automated retrieval from UniProt, PDB, AlphaFold DB, PubChem, ChEMBL
+- Format conversion (PDB, MOL2, SDF, SMILES, FASTA, Newick)
+- Metadata enrichment from literature and databases
+
+**Workflow Management:**
+- DAG-based execution with checkpointing
+- Parameter sweep support
+- Conditional branching based on quality metrics
+- Provenance capture (inputs, parameters, versions, timestamps)
+
+### Explicitly Excluded
+
+- Quantum chemistry (DFT, ab initio calculations)
+- Protein design/engineering workflows
+- Clinical trial data management
+- Regulatory submission tooling
+- Real-time collaborative editing
+- Machine learning model training interfaces
+
+### Scientific Guardrails
+
+**Mandatory Warnings:**
+- Docking scores do not equal binding affinity
+- ADMET predictions require experimental validation
+- Phylogenetic support values are method-dependent
+- AlphaFold pLDDT < 70 regions require caution
+
+**Uncertainty Propagation:**
+- All predictions include confidence intervals where applicable
+- Ensemble methods report variance across runs
+- Literature disagreement flagged in UI
+
+---
+
+## 4. High-Level System Architecture
+
+### Architecture Style
+Microservices with event-driven workflow orchestration, unified by a domain service layer.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Web UI (React)                       │
+│  ┌──────────┬──────────┬──────────┬──────────┐        │
+│  │Workspace │Visualizer│Workflows │Results   │        │
+│  └──────────┴──────────┴──────────┴──────────┘        │
+└────────────────────┬────────────────────────────────────┘
+                     │ REST + WebSocket
+┌────────────────────▼────────────────────────────────────┐
+│              API Gateway (FastAPI)                      │
+│  Authentication │ Rate Limiting │ Request Routing       │
+└────────────────────┬────────────────────────────────────┘
+                     │
+        ┌────────────┼────────────┬──────────────┐
+        │            │            │              │
+┌───────▼──────┬─────▼─────┬─────▼──────┬──────▼───────┐
+│ Sequence Svc │ Structure │ Docking Svc│ ADMET Svc    │
+│              │    Svc    │            │              │
+│ • Alignment  │ • Pocket  │ • AutoDock │ • Property   │
+│ • Phylogeny  │   detect  │   Vina     │   prediction │
+│ • Conserve   │ • Visuals │ • Scoring  │ • Filtering  │
+└──────┬───────┴─────┬─────┴──────┬─────┴──────┬───────┘
+       │             │            │            │
+┌──────▼─────────────▼────────────▼────────────▼───────┐
+│         Workflow Orchestration Engine                │
+│  (Temporal.io or Airflow-like DAG executor)          │
+│  • Job scheduling  • Retry logic  • Provenance       │
+└──────┬───────────────────────────────────────────────┘
+       │
+┌──────▼───────────────────────────────────────────────┐
+│  Compute Layer (Kubernetes + Spot Instances)         │
+│  • Containerized tools (Docker)                      │
+│  • HPC queue integration (Slurm optional)            │
+│  • GPU allocation for MD/scoring                     │
+└──────┬───────────────────────────────────────────────┘
+       │
+┌──────▼───────────────────────────────────────────────┐
+│  Storage Layer                                       │
+│  • PostgreSQL (metadata, users, jobs)                │
+│  • S3/MinIO (structures, trajectories, results)      │
+│  • Redis (caching, session, job queue)               │
+└──────────────────────────────────────────────────────┘
+```
+
+### Key Architectural Decisions
+
+**1. Domain Services as Boundaries**
+Each scientific domain (sequence, structure, docking, ADMET) encapsulates tools, data models, and validation logic. Services expose REST APIs and emit events.
+
+**2. Workflow Orchestration Abstraction**
+Use Temporal or Apache Airflow for DAG execution. Workflows defined as code, versioned in Git, parameterized via JSON/YAML.
+
+**3. Compute Decoupling**
+Jobs submitted as containerized tasks. Orchestrator handles scheduling, retries, and result collection. Compute nodes stateless.
+
+**4. Data Locality**
+Large files (PDB, trajectories) stored in object storage with pre-signed URLs. Metadata in relational DB. Caching layer for repeated queries.
+
+---
+
+## 5. Technology Stack
+
+### Frontend
+- **Framework:** React 18+ with TypeScript
+- **State Management:** Zustand or Redux Toolkit
+- **Visualization:**
+  - 3D: NGL Viewer (WebGL-based molecular graphics)
+  - 2D: RDKit.js for chemical structures
+  - Plots: Plotly.js or Recharts
+- **Alignment/Tree UI:** Custom Canvas-based renderers with SVG export
+- **Build:** Vite, ESLint, Prettier
+
+### Backend
+- **API Layer:** FastAPI (Python 3.11+)
+- **Service Logic:** Python with domain-specific packages
+- **Authentication:** OAuth2 + JWT, integration with institutional SSO (SAML)
+- **Rate Limiting:** Redis-backed token bucket
+
+### Compute & Tools
+- **Containerization:** Docker with multi-stage builds
+- **Orchestration:** Kubernetes (1.28+)
+- **Workflow Engine:** Temporal.io (preferred) or Apache Airflow
+- **Scientific Tools (containerized):**
+  - Sequence: MAFFT, MUSCLE, ClustalOmega, IQ-TREE, RAxML
+  - Structure: PyMOL (headless), Open Babel, RDKit
+  - Docking: AutoDock Vina, MGLTools (prepare scripts), smina
+  - MD: GROMACS (2023+), MDAnalysis
+  - ADMET: RDKit descriptors, ChemBL models, custom QSAR
+
+### Storage
+- **Relational:** PostgreSQL 15+ (users, jobs, provenance)
+- **Object Store:** MinIO or AWS S3 (structures, results)
+- **Cache:** Redis 7+ (sessions, job status, frequent queries)
+- **File Formats:** PDB, PDBx/mmCIF, MOL2, SDF, FASTA, DCD, XTC
+
+### Deployment
+- **Infrastructure:** Kubernetes on AWS/GCP/Azure or on-prem
+- **CI/CD:** GitHub Actions or GitLab CI
+- **Monitoring:** Prometheus + Grafana, ELK stack for logs
+- **Cost Management:** Spot instances for batch jobs, autoscaling
+
+---
+
+## 6. Data Models & Inter-Module Contracts
+
+### Core Entities
+
+**User**
+```python
+{
+  "user_id": UUID,
+  "email": str,
+  "institution": str,
+  "role": Enum["researcher", "admin", "guest"],
+  "compute_quota": int,  # CPU-hours/month
+  "storage_quota": int   # GB
+}
+```
+
+**Project**
+```python
+{
+  "project_id": UUID,
+  "owner_id": UUID,
+  "name": str,
+  "description": str,
+  "created_at": datetime,
+  "members": List[UUID],
+  "tags": List[str]
+}
+```
+
+**Sequence**
+```python
+{
+  "sequence_id": UUID,
+  "project_id": UUID,
+  "source": Enum["upload", "uniprot", "refseq"],
+  "accession": Optional[str],
+  "sequence": str,
+  "metadata": {
+    "organism": str,
+    "length": int,
+    "annotations": Dict
+  },
+  "created_at": datetime
+}
+```
+
+**Structure**
+```python
+{
+  "structure_id": UUID,
+  "project_id": UUID,
+  "source": Enum["pdb", "alphafold", "upload"],
+  "pdb_id": Optional[str],
+  "file_url": str,  # S3 path
+  "resolution": Optional[float],
+  "method": Enum["xray", "nmr", "em", "prediction"],
+  "chains": List[str],
+  "metadata": Dict,
+  "created_at": datetime
+}
+```
+
+**Ligand**
+```python
+{
+  "ligand_id": UUID,
+  "project_id": UUID,
+  "source": Enum["pubchem", "chembl", "upload", "drawn"],
+  "smiles": str,
+  "inchi": str,
+  "mol_file_url": str,
+  "properties": {
+    "mw": float,
+    "logp": float,
+    "hbd": int,
+    "hba": int
+  },
+  "created_at": datetime
+}
+```
+
+**Job**
+```python
+{
+  "job_id": UUID,
+  "user_id": UUID,
+  "project_id": UUID,
+  "job_type": Enum["alignment", "docking", "md", "admet", ...],
+  "status": Enum["queued", "running", "completed", "failed"],
+  "parameters": Dict,
+  "inputs": List[UUID],  # References to sequences/structures/ligands
+  "outputs": List[UUID],
+  "created_at": datetime,
+  "started_at": Optional[datetime],
+  "completed_at": Optional[datetime],
+  "compute_time": Optional[int],  # seconds
+  "provenance": {
+    "tool": str,
+    "version": str,
+    "command": str,
+    "container_image": str
+  }
+}
+```
+
+**Result**
+```python
+{
+  "result_id": UUID,
+  "job_id": UUID,
+  "result_type": str,  # e.g., "alignment", "docking_pose", "phylo_tree"
+  "file_url": str,
+  "summary": Dict,  # Key metrics for quick display
+  "created_at": datetime
+}
+```
+
+### Inter-Module Contracts
+
+**Sequence → Structure:**
+- Input: Sequence FASTA + template structure
+- Output: Homology model (PDB) or AlphaFold structure with pLDDT scores
+
+**Structure → Pocket Detection:**
+- Input: Structure PDB + chain ID
+- Output: Pocket geometries (XYZ coordinates), volume, druggability score
+
+**Pocket + Ligand → Docking:**
+- Input: Structure PDB, pocket center/box, ligand MOL2/SDF
+- Output: Docking poses (ranked by score), binding mode visualizations
+
+**Docking → MD:**
+- Input: Top docking pose (complex PDB)
+- Output: Trajectory (XTC/DCD), RMSD, RMSF, binding free energy estimate
+
+**Ligand → ADMET:**
+- Input: SMILES string
+- Output: Predicted properties (logP, solubility, Caco-2, hERG IC50, etc.) with confidence intervals
+
+**Multi-Module → Decision Support:**
+- Input: All result IDs from above modules
+- Output: Ranked candidate report with aggregated scores and warnings
+
+---
+
+## 7. Detailed Module Specifications
+
+### 7.1 Sequence Analysis Module
+
+**Responsibilities:**
+- Fetch sequences from UniProt, Swiss-Prot, EMBL, RefSeq
+- Validate FASTA format and sequence composition
+- Annotate with domains (Pfam), secondary structure predictions
+- Store and retrieve sequences with provenance
+
+**API Endpoints:**
+- `POST /sequences/import` (from accession or file upload)
+- `GET /sequences/{sequence_id}`
+- `GET /sequences/{sequence_id}/annotations`
+- `POST /sequences/validate`
+
+**Data Validation:**
+- Reject sequences with ambiguous characters beyond standard IUPAC
+- Warn if sequence length < 20 or > 10,000 residues for typical workflows
+- Check for poly-X repeats (low complexity)
+
+**External Integrations:**
+- UniProt REST API for metadata enrichment
+- InterPro for domain annotations
+- AlphaFold DB for structure retrieval if available
+
+---
+
+### 7.2 Sequence Alignment Module
+
+**Supported Algorithms:**
+- **Pairwise:** Needleman-Wunsch (global), Smith-Waterman (local)
+- **Multiple:** MAFFT (FFT-NS-2, L-INS-i), MUSCLE, Clustal Omega, T-Coffee, ProbCons
+
+**Workflow:**
+1. User selects sequences (2–10,000 sequences)
+2. Choose algorithm and parameters (gap open/extend penalties, scoring matrix)
+3. Submit job → containerized tool execution
+4. Return alignment in FASTA, Clustal, Stockholm formats
+5. Generate conservation visualization (WebLogo-style)
+
+**API Endpoints:**
+- `POST /alignments/create`
+- `GET /alignments/{alignment_id}`
+- `GET /alignments/{alignment_id}/export?format=fasta`
+
+**Quality Metrics:**
+- Report alignment score, percent identity, gap percentage
+- Flag low-quality regions (< 30% conservation)
+
+**Visualization:**
+- Interactive alignment viewer with color schemes (Zappo, ClustalX, hydrophobicity)
+- Consensus sequence and conservation bar chart
+- Export as SVG, PDF, PNG
+
+---
+
+### 7.3 Conservation Analysis Module
+
+**Purpose:**
+Quantify evolutionary conservation at each residue position, correlate with structural/functional importance.
+
+**Methods:**
+- Shannon entropy-based scoring
+- Jensen-Shannon divergence
+- Rate4Site (empirical Bayesian method)
+
+**Workflow:**
+1. Input: Multiple sequence alignment + optional structure
+2. Compute conservation scores per position
+3. Map scores to structure (B-factor replacement) if provided
+4. Generate conservation heatmap and 3D visualization
+
+**API Endpoints:**
+- `POST /conservation/compute`
+- `GET /conservation/{result_id}`
+
+**Output:**
+- Per-residue scores (CSV, JSON)
+- Structure file with scores in B-factor column (PDB)
+- Visualization: conservation gradient on 3D structure
+
+---
+
+### 7.4 Phylogenetic Analysis Module
+
+**Tree Construction Methods:**
+- **Distance-based:** UPGMA, Neighbor-Joining
+- **Maximum Likelihood:** IQ-TREE, RAxML
+- **Bayesian:** MrBayes (optional, computationally expensive)
+
+**Workflow:**
+1. Input: Alignment (FASTA, Phylip, Nexus)
+2. Select evolutionary model (auto-detect or user-specified)
+3. Run tree inference with bootstrap replicates (100–1000)
+4. Root tree (midpoint or outgroup)
+5. Visualize and annotate
+
+**API Endpoints:**
+- `POST /phylogeny/infer`
+- `GET /phylogeny/{tree_id}`
+- `POST /phylogeny/{tree_id}/reroot`
+
+**Output Formats:**
+- Newick, Nexus, PhyloXML
+- PDF/SVG/PNG with customizable layout (rectangular, circular, radial)
+
+**Bootstrap Support:**
+- Display bootstrap values on nodes
+- Color-code branches by support (< 50% red, 50–75% yellow, > 75% green)
+
+**Metadata Integration:**
+- Map taxonomic info, gene names, functional annotations onto tree tips
+- Highlight clades of interest
+
+---
+
+### 7.5 Binding Pocket Detection & Analysis Module
+
+**Detection Algorithms:**
+- Geometric methods (alpha shapes, Voronoi diagrams)
+- Energy-based methods (probe-based scanning)
+- Hybrid approach (Fpocket, DoGSiteScorer-like)
+
+**Workflow:**
+1. Input: Structure PDB, optional chain selection
+2. Detect all pockets (ranked by volume/druggability)
+3. Characterize each pocket:
+   - Volume (Å³), surface area (Å²)
+   - Depth (Å)
+   - Hydrophobicity ratio
+   - Residue composition
+   - Druggability score (0–1)
+
+**API Endpoints:**
+- `POST /pockets/detect`
+- `GET /pockets/{result_id}/pockets`
+- `GET /pockets/{pocket_id}/details`
+
+**Druggability Scoring:**
+- Weighted combination of:
+  - Volume (optimal 400–800 Å³)
+  - Hydrophobicity (30–70%)
+  - Shape complementarity
+  - Accessibility
+- Score normalized to 0–1, > 0.6 considered druggable
+
+**Visualization:**
+- Pocket surface rendered as mesh in 3D viewer
+- Color-coded by property (hydrophobicity, charge)
+- Residue labels for key interactions
+
+---
+
+### 7.6 Molecular Docking Module
+
+**Docking Engines:**
+- AutoDock Vina (primary, fast)
+- Smina (Vina fork with custom scoring)
+- Optional: DOCK6, rDock for alternative scoring functions
+
+**Preparation Pipeline:**
+- **Protein:** Add hydrogens (PDB2PQR), assign charges (Gasteiger or AMBER), remove waters/ligands
+- **Ligand:** Convert SMILES → 3D (RDKit), energy minimize (MMFF94 or UFF), assign charges, detect rotatable bonds
+
+**Workflow:**
+1. Input: Protein structure, ligand(s), docking box (center + size or from pocket)
+2. Automated preparation (or user provides prepared files)
+3. Run docking (exhaustiveness parameter for search thoroughness)
+4. Return top N poses per ligand (default N=9)
+5. Rank by docking score, cluster similar poses
+
+**API Endpoints:**
+- `POST /docking/prepare_protein`
+- `POST /docking/prepare_ligand`
+- `POST /docking/run`
+- `GET /docking/{job_id}/poses`
+
+**Scoring:**
+- Docking score in kcal/mol (lower is better)
+- Explicitly label as "predicted binding affinity estimate, not experimental"
+- Provide ligand efficiency (score / heavy atom count)
+
+**Pose Analysis:**
+- Hydrogen bond detection (distance < 3.5 Å, angle criteria)
+- Hydrophobic contacts (distance < 4.0 Å)
+- Salt bridges, π-π stacking, cation-π interactions
+- Generate 2D interaction diagram
+
+**Validation:**
+- If native ligand available, report RMSD of re-docked pose vs. crystal structure
+- Warn if top pose has suspicious geometry (clashes, strained bonds)
+
+---
+
+### 7.7 Docking & Structure Visualization Module
+
+**3D Viewer:**
+- Based on NGL Viewer (WebGL)
+- Representations: cartoon, surface, licorice, ball-and-stick, ribbon
+- Color schemes: by element, chain, secondary structure, B-factor, custom
+- Measurements: distance, angle, dihedral
+- Animations: morph between states, trajectory playback
+
+**Comparison Tools:**
+- Superimpose multiple structures (CE, TM-align algorithms)
+- Side-by-side or overlay mode
+- RMSD calculations with per-residue breakdown
+
+**Docking Pose Viewer:**
+- Load protein-ligand complex
+- Toggle ligand visibility, change representation
+- Highlight interaction residues
+- Generate ray-traced images (via server-side PyMOL)
+
+**Export:**
+- PNG, SVG (2D interaction diagrams)
+- PDB, MOL2 (modified structures)
+- Session files for PyMOL, Chimera
+
+**API Endpoints:**
+- `GET /visualize/structure/{structure_id}`
+- `POST /visualize/superimpose`
+- `GET /visualize/interactions/{complex_id}`
+
+---
+
+### 7.8 Molecular Dynamics Module
+
+**Simulation Protocols:**
+- Short MD (10–100 ns) for pose refinement and stability check
+- Long MD (100+ ns) for conformational sampling (optional, high compute)
+
+**Workflow:**
+1. Input: Protein-ligand complex (from docking or user upload)
+2. System setup:
+   - Add solvent box (TIP3P or TIP4P water)
+   - Neutralize with ions (NaCl, KCl)
+   - Force field selection (AMBER, CHARMM, OPLS)
+3. Energy minimization (steepest descent + conjugate gradient)
+4. Equilibration (NVT then NPT, restraints on heavy atoms)
+5. Production run (constant pressure/temperature, no restraints)
+6. Trajectory analysis
+
+**Analysis Outputs:**
+- RMSD vs. time (backbone, heavy atoms, ligand)
+- RMSF per residue (flexibility)
+- Radius of gyration (compactness)
+- Hydrogen bond occupancy
+- MM-PBSA or MM-GBSA binding free energy (optional, expensive)
+
+**API Endpoints:**
+- `POST /md/setup`
+- `POST /md/run`
+- `GET /md/{job_id}/trajectory`
+- `GET /md/{job_id}/analysis`
+
+**Validation:**
+- Check if system explodes (energy > threshold, RMSD > 10 Å)
+- Warn if equilibration not converged (temperature, pressure, density fluctuations)
+
+**Visualization:**
+- Trajectory playback in 3D viewer
+- Plots: RMSD, RMSF, energy components
+- Export frames as PDB snapshots
+
+---
+
+### 7.9 ADMET Prediction Module
+
+**Properties Computed:**
+
+**Physicochemical:**
+- Molecular weight, logP, logD, TPSA
+- HBA, HBD, rotatable bonds, aromatic rings
+- Lipinski's Rule of Five compliance
+
+**Pharmacokinetics:**
+- Caco-2 permeability (in silico)
+- Blood-brain barrier penetration (logBB)
+- P-glycoprotein substrate prediction
+- Human intestinal absorption (HIA %)
+- Plasma protein binding (PPB %)
+
+**Toxicity:**
+- hERG IC50 (cardiotoxicity)
+- AMES mutagenicity (binary classification)
+- Hepatotoxicity (binary classification)
+- LD50 (acute toxicity in rodents)
+
+**Methods:**
+- RDKit descriptors for physicochemical properties
+- Pre-trained QSAR models (Random Forest, XGBoost) for PK/Tox
+- Models trained on ChEMBL, PubChem, Tox21 datasets
+
+**Workflow:**
+1. Input: SMILES string or structure file
+2. Sanitize molecule (valence check, aromaticity perception)
+3. Compute descriptors
+4. Run through prediction models
+5. Return predictions with confidence intervals
+
+**API Endpoints:**
+- `POST /admet/predict`
+- `GET /admet/{result_id}`
+
+**Output Format:**
+```json
+{
+  "ligand_id": "UUID",
+  "smiles": "CCO",
+  "properties": {
+    "mw": 46.07,
+    "logp": -0.23,
+    "tpsa": 20.23,
+    "hbd": 1,
+    "hba": 1,
+    "lipinski_violations": 0
+  },
+  "pharmacokinetics": {
+    "caco2_permeability": {
+      "value": -5.2,
+      "unit": "log cm/s",
+      "confidence": "medium",
+      "interpretation": "moderate permeability"
+    },
+    "bbb_penetration": {
+      "value": 0.15,
+      "interpretation": "low",
+      "confidence": "low"
+    }
+  },
+  "toxicity": {
+    "herg_ic50": {
+      "value": 12.3,
+      "unit": "uM",
+      "confidence": "medium",
+      "risk": "moderate"
+    },
+    "ames": {
+      "prediction": "non-mutagenic",
+      "confidence": 0.85
+    }
+  },
+  "warnings": [
+    "Model trained on druglike molecules; extrapolation for natural products uncertain"
+  ]
+}
+```
+
+**Uncertainty Quantification:**
+- Applicability domain check (distance to training set)
+- Consensus predictions from multiple models
+- Flag if molecule outside training space
+
+---
+
+### 7.10 Decision-Support & Drug Design Inference Module
+
+**Purpose:**
+Integrate outputs from docking, pocket analysis, MD, ADMET to provide ranked candidate lists with explainable rationale.
+
+**Scoring Framework:**
+Multi-criteria decision analysis with weighted components:
+
+1. **Binding Affinity (25%):** Docking score, normalized
+2. **Stability (20%):** MD RMSD, binding free energy if available
+3. **Druggability (20%):** Pocket druggability score, ligand efficiency
+4. **ADMET Profile (25%):** Weighted combination of PK/Tox predictions
+5. **Synthetic Accessibility (10%):** SA score (0–10, lower is easier)
+
+**Workflow:**
+1. User selects a set of ligands with completed docking, MD, ADMET analyses
+2. System aggregates all results
+3. Normalize each metric to 0–1 scale
+4. Apply user-defined or default weights
+5. Compute composite score per ligand
+6. Rank and generate report
+
+**API Endpoints:**
+- `POST /decision_support/analyze`
+- `GET /decision_support/{report_id}`
+
+**Report Contents:**
+- Ranked table: ligand name, composite score, individual metric scores
+- Traffic light indicators (red/yellow/green) per metric
+- Warnings: e.g., "Ligand X has high hERG risk despite good docking score"
+- Recommendations: "Prioritize experimental validation for top 3 candidates"
+- Explicitly state: "This is a computational prediction for hypothesis generation, not a therapeutic recommendation"
+
+**Explainability:**
+- Feature importance: which metrics contributed most to ranking
+- Pairwise comparisons: why Ligand A ranked higher than Ligand B
+- Sensitivity analysis: how ranking changes with different weights
+
+**Guardrails:**
+- Never claim a molecule is "safe" or "effective" without experimental data
+- Always include confidence intervals
+- Cite literature if specific substructures have known issues (e.g., quinones, Michael acceptors)
+
+---
+
+## 8. Workflow Orchestration & Reproducibility Strategy
+
+### Workflow Definitions
+
+Workflows defined as Python code using Temporal SDK or Airflow DAGs.
+
+**Example: Virtual Screening Workflow**
+```python
+@workflow
+def virtual_screening(target_structure_id, ligand_library_ids, params):
+    # Step 1: Pocket detection
+    pockets = await detect_pockets(target_structure_id, params.pocket)
+    top_pocket = select_top_pocket(pockets)
+    
+    # Step 2: Docking
+    docking_jobs = []
+    for ligand_id in ligand_library_ids:
+        job = await dock_ligand(target_structure_id, ligand_id, top_pocket, params.docking)
+        docking_jobs.append(job)
+    
+    # Step 3: Filter by docking score
+    top_poses = await filter_poses(docking_jobs, score_threshold=-7.0)
+    
+    # Step 4: MD for top 10
+    md_jobs = []
+    for pose in top_poses[:10]:
+        job = await run_md(pose.complex_id, params.md)
+        md_jobs.append(job)
+    
+    # Step 5: ADMET for stable poses
+    stable_poses = await filter_stable_md(md_jobs, rmsd_threshold=3.0)
+    admet_results = []
+    for pose in stable_poses:
+        result = await predict_admet(pose.ligand_id)
+        admet_results.append(result)
+    
+    # Step 6: Decision support
+    report = await generate_report(stable_poses, admet_results, params.weights)
+    return report
+```
+
+### Provenance Tracking
+
+Every job records:
+- Input file hashes (SHA256)
+- Parameter JSON
+- Tool version (Docker image tag)
+- Execution timestamp
+- Compute resource (node ID, CPU/GPU hours)
+- Output file hashes
+
+Provenance stored in relational DB, queryable via API.
+
+**Export Formats:**
+- JSON-LD (W3C PROV standard)
+- CWL (Common Workflow Language) for tool wrapping
+- Galaxy workflow XML for interoperability
+
+### Reproducibility Requirements
+
+1. **Containerization:** All tools in versioned Docker images
+2. **Determinism:** Random seeds fixed by default, user can override
+3. **Environment capture:** Conda env export, pip freeze equivalent
+4. **Data versioning:** Input datasets tagged with version or commit hash
+5. **Workflow versioning:** Git-tracked workflow definitions
+6. **Audit trail:** Immutable job logs
+
+### Checkpointing & Recovery
+
+- Workflows checkpoint after each major step
+- On failure, resume from last successful checkpoint
+- User can manually retry failed steps with modified parameters
+
+---
+
+## 9. UI/UX Philosophy for Scientific Software
+
+### Design Principles
+
+1. **Progressive Disclosure:** Simple defaults, advanced options collapsible
+2. **Instant Validation:** Catch errors before job submission (file format, parameter ranges)
+3. **Visual Feedback:** Progress bars, status badges, real-time logs
+4. **Contextual Help:** Tooltips, documentation links inline
+5. **Keyboard Shortcuts:** Power users can navigate without mouse
+6. **Accessibility:** WCAG 2.1 AA compliance (contrast, screen reader support)
+
+### Core Interface Components
+
+**Workspace (Landing Page):**
+- Project browser (grid or list view)
+- Recent activity feed
+- Quick actions: upload data, start workflow, view results
+
+**Data Manager:**
+- Unified view of sequences, structures, ligands
+- Tagging and filtering (by date, source, metadata)
+- Batch operations (delete, download, share)
+
+**Workflow Builder:**
+- Drag-and-drop canvas for connecting modules
+- Pre-built templates for common workflows
+- Real-time parameter validation
+- Cost estimation (compute time, credits)
+
+**Job Monitor:**
+- Table of active/queued/completed jobs
+- Detailed logs accessible via modal
+- Cancel or restart failed jobs
+- Export job history as CSV
+
+**Results Viewer:**
+- Module-specific viewers (alignment, tree, 3D structure, plots)
+- Comparison mode (side-by-side or overlay)
+- Export options prominently displayed
+- Shareable result URLs with access control
+
+**Settings & Preferences:**
+- Account info, compute quotas
+- Default parameters per module
+- Notification preferences (email, in-app)
+- API key management
+
+### Visualization Standards
+
+- **Color Palettes:** Colorblind-safe (Viridis, ColorBrewer)
+- **Fonts:** Monospace for sequences/code, sans-serif for UI
+- **Interactivity:** Hover tooltips, click for details, zoom/pan
+- **Performance:** Lazy load large datasets, virtualized lists
+
+### Mobile Considerations
+
+- Responsive design (Tailwind breakpoints)
+- Read-only views for results (job submission desktop-only)
+- Touch-friendly controls in 3D viewer
+
+---
+
+## 10. Performance, Security, and Scalability Requirements
+
+### Performance Targets
+
+**Response Times:**
+- API latency: < 200ms (p95) for metadata queries
+- Page load: < 2s for UI initial render
+- Visualization load: < 5s for 10,000-atom structure
+
+**Throughput:**
+- Support 1,000 concurrent users
+- Process 10,000 docking jobs/day on typical cluster
+- Handle 100 GB file uploads (chunked, resumable)
+
+**Optimization Strategies:**
+- Database query caching (Redis, 5-minute TTL)
+- CDN for static assets and public structures (PDB)
+- Lazy loading for large result sets
+- Pre-computed summaries for frequent queries
+
+### Security Requirements
+
+**Authentication & Authorization:**
+- OAuth2 + JWT tokens (15-minute expiry, refresh tokens)
+- Role-based access control (RBAC): admin, researcher, guest
+- Project-level permissions (owner, collaborator, viewer)
+- SSO integration (SAML, OIDC) for institutions
+
+**Data Protection:**
+- Encryption at rest (AES-256) for object storage
+- TLS 1.3 for all API traffic
+- Sensitive data (user emails, tokens) hashed with Argon2
+- GDPR compliance: data export, deletion on request
+
+**Input Validation:**
+- Sanitize file uploads (check magic bytes, scan for malware)
+- Reject malformed SMILES, FASTA, PDB (fail fast with clear error)
+- Rate limiting: 100 requests/minute per user, 10 concurrent jobs
+
+**Audit Logging:**
+- Log all authentication attempts, API calls, data access
+- Immutable logs stored separately from application DB
+- Retention: 2 years minimum
+
+### Scalability Architecture
+
+**Horizontal Scaling:**
+- Stateless API servers (scale with load balancer)
+- Worker nodes auto-scale based on job queue depth (Kubernetes HPA)
+- Database read replicas for heavy query load
+
+**Vertical Scaling:**
+- GPU nodes for MD, large docking campaigns
+- High-memory nodes for phylogenetic inference (RAxML, IQ-TREE)
+
+**Cost Management:**
+- Use spot instances for batch jobs (80% cost reduction)
+- Archive old results to cold storage (Glacier) after 6 months
+- Implement compute quotas per user/project
+
+**Global Deployment:**
+- Multi-region support (US, EU, Asia)
+- Data sovereignty: users select region for storage
+- Latency optimization: CDN for UI, regional compute clusters
+
+---
+
+## 11. Validation, Error Handling, and Scientific Guardrails
+
+### Input Validation Rules
+
+**Sequences:**
+- Length: 1–50,000 residues (warn if > 10,000)
+- Alphabet: Standard 20 amino acids + ambiguity codes (B, Z, X)
+- Reject if > 10% X (low quality)
+
+**Structures:**
+- Format: PDB, PDBx/mmCIF, validate with Biopython
+- Check for missing residues, non-standard residues (flag, don't reject)
+- Warn if resolution > 3.0 Å (X-ray) or pLDDT < 70 (AlphaFold)
+
+**Ligands:**
+- SMILES sanitization (RDKit)
+- Reject if MW > 1,000 Da (outside drug-like space)
+- Warn if > 10 rotatable bonds (flexible, docking challenging)
+- Check for reactive groups (aldehydes, peroxides) and flag
+
+**Parameters:**
+- Docking box size: 10–30 Å (reject if outside range)
+- MD simulation time: 1–500 ns (warn if > 200 ns)
+- Temperature: 273–373 K (reject if outside physiological range)
+
+### Error Handling Strategy
+
+**Error Categories:**
+
+1. **User Error:** Invalid input, parameter out of range
+   - Response: 400 Bad Request, clear error message, link to docs
+   
+2. **Tool Failure:** Tool crashes, non-zero exit code
+   - Response: Log full error, retry once, then mark job failed
+   - User sees: "Docking failed: ligand preparation error. Check ligand structure."
+   
+3. **Infrastructure Error:** Out of memory, disk full, network timeout
+   - Response: Automatic retry (3 attempts), escalate to admin if persistent
+   - User sees: "Job temporarily unavailable, retrying..."
+   
+4. **Scientific Warning:** Result valid but questionable
+   - Response: Job succeeds, but result includes warning flags
+   - Example: "Low docking score reliability: pocket volume < 200 Å³"
+
+**Error Propagation:**
+- Never silently fail
+- Log detailed error to system, show user-friendly message in UI
+- Provide troubleshooting steps (e.g., "Try reducing docking exhaustiveness")
+
+### Scientific Guardrails
+
+**Hard Stops:**
+- Refuse to dock if protein has > 50% missing residues
+- Refuse ADMET prediction if SMILES invalid
+- Refuse phylogeny if alignment has < 3 sequences
+
+**Soft Warnings:**
+- Flag if docking score > 0 kcal/mol (unusual)
+- Flag if MD RMSD > 5 Å (pose unstable)
+- Flag if hERG IC50 < 1 µM (cardiotoxicity risk)
+- Flag if phylogenetic bootstrap support < 50% (weak clade)
+
+**Contextual Disclaimers:**
+Every result page includes:
+- "These are computational predictions for research purposes."
+- "Experimental validation is required before any biological or clinical application."
+- Link to methodology documentation and limitations
+
+**Model Transparency:**
+- Display training dataset size, validation metrics (R², RMSE)
+- Indicate if prediction outside applicability domain
+- Cite literature for model methodology
+
+---
+
+## 12. Extensibility & Long-Term Roadmap
+
+### Plugin Architecture
+
+**Tool Integration Framework:**
+- Define standardized interfaces for new tools (input/output schemas)
+- Tools packaged as Docker containers with manifest file (JSON)
+- Manifest specifies: inputs, outputs, parameters, resource requirements
+- Dynamic tool registration via admin API
+
+**Example Manifest:**
+```json
+{
+  "tool_name": "custom_scorer",
+  "version": "1.0.0",
+  "docker_image": "myregistry/custom_scorer:1.0.0",
+  "inputs": [
+    {"name": "complex", "type": "pdb", "required": true}
+  ],
+  "outputs": [
+    {"name": "score", "type": "json"}
+  ],
+  "parameters": [
+    {"name": "weight", "type": "float", "default": 1.0, "min": 0.0, "max": 10.0}
+  ],
+  "resources": {
+    "cpu": 2,
+    "memory_gb": 8,
+    "gpu": false
+  }
+}
+```
+
+### API Extensibility
+
+**Public API (v1):**
+- RESTful endpoints for all core operations
+- GraphQL endpoint for complex queries
+- WebSocket for real-time job updates
+- Rate limits enforced, higher tiers for institutional users
+
+**SDK Support:**
+- Python client library (PyPI)
+- R client library (CRAN) for statistical integration
+- CLI tool for scripting
+
+### Future Modules (Roadmap)
+
+**Year 1:**
+- Protein-protein docking (HADDOCK, ClusPro-like)
+- Free energy perturbation (FEP) for binding affinity
+- Enhanced QSAR model training interface
+
+**Year 2:**
+- Covalent docking (reactive ligands)
+- Metadynamics for conformational sampling
+- RNA structure prediction (RNAfold, MC-Fold)
+
+**Year 3:**
+- Antibody-antigen docking
+- Integrative structural biology (hybrid methods)
+- Machine learning model marketplace (user-contributed)
+
+### Database Schema Evolution
+
+- Use Alembic (Python) for schema migrations
+- Versioned migrations in Git
+- Backward compatibility maintained for at least 2 major versions
+- Deprecated fields retained with warnings before removal
+
+### Community & Open Science
+
+**Open Source Components:**
+- Frontend UI framework (MIT license)
+- Tool wrapper utilities (Apache 2.0)
+- Public API clients (MIT)
+
+**Proprietary Components:**
+- Workflow orchestration engine (customized)
+- ADMET models (trained on licensed data)
+- Decision support algorithms (institutional IP)
+
+**Data Sharing:**
+- Users can opt-in to share anonymized workflows and results
+- Public project gallery (with attribution)
+- Export to Zenodo for DOI assignment and long-term archival
+
+---
+
+## Appendix A: Reference Tool Versions
+
+| Tool | Version | Container | License |
+|------|---------|-----------|---------|
+| MAFFT | 7.520 | biocontainers/mafft:7.520 | BSD |
+| MUSCLE | 5.1 | biocontainers/muscle:5.1 | Public Domain |
+| IQ-TREE | 2.2.0 | biocontainers/iqtree:2.2.0 | GPL-2.0 |
+| AutoDock Vina | 1.2.3 | custom/vina:1.2.3 | Apache 2.0 |
+| GROMACS | 2023.1 | biocontainers/gromacs:2023.1 | LGPL-2.1 |
+| RDKit | 2023.09.1 | custom/rdkit:2023.09.1 | BSD |
+| PyMOL | 2.5.0 | custom/pymol:2.5.0 | PyMOL License |
+| Open Babel | 3.1.1 | biocontainers/openbabel:3.1.1 | GPL-2.0 |
+
+---
+
+## Appendix B: Database Schema (Core Tables)
+
+```sql
+CREATE TABLE users (
+    user_id UUID PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    institution VARCHAR(255),
+    role VARCHAR(50) NOT NULL,
+    compute_quota_hours INT DEFAULT 100,
+    storage_quota_gb INT DEFAULT 50,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE projects (
+    project_id UUID PRIMARY KEY,
+    owner_id UUID REFERENCES users(user_id),
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE sequences (
+    sequence_id UUID PRIMARY KEY,
+    project_id UUID REFERENCES projects(project_id),
+    source VARCHAR(50) NOT NULL,
+    accession VARCHAR(100),
+    sequence TEXT NOT NULL,
+    metadata JSONB,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE structures (
+    structure_id UUID PRIMARY KEY,
+    project_id UUID REFERENCES projects(project_id),
+    source VARCHAR(50) NOT NULL,
+    pdb_id VARCHAR(10),
+    file_url VARCHAR(500) NOT NULL,
+    resolution FLOAT,
+    method VARCHAR(50),
+    chains VARCHAR(100)[],
+    metadata JSONB,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE ligands (
+    ligand_id UUID PRIMARY KEY,
+    project_id UUID REFERENCES projects(project_id),
+    source VARCHAR(50) NOT NULL,
+    smiles TEXT NOT NULL,
+    inchi TEXT,
+    mol_file_url VARCHAR(500),
+    properties JSONB,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE jobs (
+    job_id UUID PRIMARY KEY,
+    user_id UUID REFERENCES users(user_id),
+    project_id UUID REFERENCES projects(project_id),
+    job_type VARCHAR(100) NOT NULL,
+    status VARCHAR(50) NOT NULL,
+    parameters JSONB,
+    inputs UUID[],
+    outputs UUID[],
+    created_at TIMESTAMP DEFAULT NOW(),
+    started_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    compute_time_seconds INT,
+    provenance JSONB
+);
+
+CREATE TABLE results (
+    result_id UUID PRIMARY KEY,
+    job_id UUID REFERENCES jobs(job_id),
+    result_type VARCHAR(100) NOT NULL,
+    file_url VARCHAR(500),
+    summary JSONB,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_jobs_user ON jobs(user_id);
+CREATE INDEX idx_jobs_status ON jobs(status);
+CREATE INDEX idx_results_job ON results(job_id);
+```
+
+---
+
+## Appendix C: Deployment Architecture Diagram
+
+```
+Internet
+    │
+    ▼
+[CloudFlare CDN]
+    │
+    ▼
+[Load Balancer (ALB)]
+    │
+    ├─────────────┬─────────────┐
+    ▼             ▼             ▼
+[API Pod 1]  [API Pod 2]  [API Pod 3]
+    │             │             │
+    └─────────────┴─────────────┘
+              │
+    ┌─────────┼─────────┐
+    ▼         ▼         ▼
+[Sequence] [Structure] [Docking]
+[Service]  [Service]   [Service]
+    │         │         │
+    └─────────┴─────────┘
+              │
+              ▼
+    [Temporal.io Cluster]
+              │
+    ┌─────────┼─────────┐
+    ▼         ▼         ▼
+[Worker 1] [Worker 2] [GPU Worker]
+    │         │         │
+    └─────────┴─────────┘
+              │
+    ┌─────────┼─────────┐
+    ▼         ▼         ▼
+[PostgreSQL] [MinIO]  [Redis]
+[RDS]       [S3]     [Cache]
+```
+
+---
+
+## Appendix D: Example API Request/Response
+
+**Request: Submit Docking Job**
+```http
+POST /api/v1/docking/run
+Authorization: Bearer <JWT_TOKEN>
+Content-Type: application/json
+
+{
+  "project_id": "123e4567-e89b-12d3-a456-426614174000",
+  "protein_structure_id": "789e4567-e89b-12d3-a456-426614174111",
+  "ligand_ids": [
+    "456e4567-e89b-12d3-a456-426614174222",
+    "789e4567-e89b-12d3-a456-426614174333"
+  ],
+  "docking_box": {
+    "center": [12.5, -3.2, 45.8],
+    "size": [20, 20, 20]
+  },
+  "parameters": {
+    "exhaustiveness": 8,
+    "num_poses": 9,
+    "energy_range": 3
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "job_id": "abc12345-e89b-12d3-a456-426614174444",
+  "status": "queued",
+  "estimated_time_minutes": 15,
+  "created_at": "2025-01-16T14:32:00Z",
+  "message": "Docking job submitted successfully. You will be notified when complete."
+}
+```
+
+**Request: Get Docking Results**
+```http
+GET /api/v1/docking/abc12345-e89b-12d3-a456-426614174444/poses
+Authorization: Bearer <JWT_TOKEN>
+```
+
+**Response:**
+```json
+{
+  "job_id": "abc12345-e89b-12d3-a456-426614174444",
+  "status": "completed",
+  "completed_at": "2025-01-16T14:47:00Z",
+  "results": [
+    {
+      "ligand_id": "456e4567-e89b-12d3-a456-426614174222",
+      "ligand_name": "compound_A",
+      "poses": [
+        {
+          "pose_id": 1,
+          "docking_score": -8.3,
+          "ligand_efficiency": -0.38,
+          "file_url": "https://storage.platform.io/results/pose_1.pdb",
+          "interactions": {
+            "hydrogen_bonds": 3,
+            "hydrophobic_contacts": 7,
+            "salt_bridges": 1
+          }
+        }
+      ]
+    }
+  ],
+  "warnings": [],
+  "provenance": {
+    "tool": "AutoDock Vina",
+    "version": "1.2.3",
+    "container": "custom/vina:1.2.3",
+    "parameters": {
+      "exhaustiveness": 8,
+      "num_poses": 9
+    }
+  }
+}
+```
+
+# Software Development Document - Addendum
+## Ligand Builder & Molecular Preparation Module
+
+**Document Version:** 1.1  
+**Addition Date:** January 2026  
+**Integration Points:** Sections 7.6 (Molecular Docking), 7.7 (Visualization)
+
+---
+
+## A1. Ligand Builder Module
+
+### A1.1 Overview & Scientific Rationale
+
+The Ligand Builder enables researchers to construct small molecules from scratch or modify existing structures without external chemical drawing software. This addresses common workflows where:
+- Novel scaffolds need to be designed in silico
+- Existing compounds require chemical modifications (R-group substitution, functional group addition)
+- Quick structure sketches are needed for proof-of-concept docking
+- Teaching environments require interactive molecule building
+
+**Design Philosophy:**
+Similar to Maestro's 2D/3D builder and MarvinSketch, but fully web-based with immediate integration into docking workflows.
+
+---
+
+### A1.2 Core Features
+
+#### 2D Sketching Interface
+
+**Drawing Tools:**
+- **Atom Placement:** Click to place C, N, O, S, P, F, Cl, Br, I, or custom elements
+- **Bond Drawing:** Single, double, triple, aromatic bonds
+- **Ring Templates:** Benzene, cyclopentane, cyclohexane, pyridine, imidazole, piperidine, morpholine, and other common scaffolds
+- **Functional Groups:** Pre-defined groups (COOH, NH2, OH, NO2, SO2NH2, etc.) as single-click additions
+- **Chain Drawing:** Continuous chain mode for alkyl/alkenyl chains
+- **Stereochemistry:** Wedge/dash bonds for chiral centers, E/Z double bond configuration
+
+**Editing Operations:**
+- **Selection:** Click or lasso to select atoms/bonds
+- **Delete:** Remove selected atoms/bonds
+- **Copy/Paste:** Duplicate molecular fragments
+- **Undo/Redo:** Full history stack (50 steps)
+- **Rotation:** Flip horizontal/vertical, rotate by 90°
+- **Charge Assignment:** Add formal charges (NH4+, COO-, etc.)
+
+**Smart Features:**
+- **Implicit Hydrogens:** Automatically calculated and displayed
+- **Valence Checking:** Real-time validation with error highlighting (e.g., pentavalent carbon turns red)
+- **Aromaticity Perception:** Auto-detect aromatic rings (Kekulé ↔ aromatic toggle)
+- **Structure Cleanup:** Automatic 2D coordinate optimization (bond lengths, angles)
+
+**Technology Stack:**
+- **Library:** Ketcher (open-source, React-compatible) or custom Canvas-based renderer
+- **Chemistry Engine:** RDKit.js for SMILES generation, validation, and structure manipulation
+
+#### 3D Builder Interface
+
+**Generation Methods:**
+- **From 2D Sketch:** Convert 2D structure to 3D using RDKit or Open Babel
+  - ETKDG (Experimental-Torsion Knowledge Distance Geometry) for conformer generation
+  - MMFF94 or UFF energy minimization
+- **From SMILES:** Direct 3D generation from SMILES string
+- **Fragment Assembly:** Combine pre-built 3D fragments (pharmacophores, linkers)
+
+**3D Editing Tools:**
+- **Atom Manipulation:**
+  - Click-and-drag to reposition atoms in 3D space
+  - Constrained movement (along axis, radial)
+- **Bond Adjustment:**
+  - Change bond lengths (click and drag endpoints)
+  - Adjust dihedral angles (rotate around single bonds)
+- **Builder Assistant:**
+  - Add atoms at tetrahedral/trigonal positions
+  - Auto-complete fragments (e.g., add benzene ring at attachment point)
+- **Measurements:**
+  - Display distances, angles, dihedrals in real-time
+  - Constrain to target values (e.g., set N-C bond to 1.47 Å)
+
+**Force Field Integration:**
+- **Real-Time Minimization:** Toggle to minimize structure while editing (prevents steric clashes)
+- **Geometry Optimization:** Full minimization on demand (MMFF94, UFF, or GAFF)
+- **Conformer Search:** Generate multiple low-energy conformers (up to 100), cluster by RMSD
+
+**Visualization:**
+- Based on NGL Viewer (same as structure viewer)
+- Representations: ball-and-stick, licorice, spacefill
+- Color coding: by element, partial charge, or custom
+- Measurement overlays (bond lengths, angles)
+
+#### Library & Template Management
+
+**Pre-Built Libraries:**
+- **Drug-Like Fragments:** 200+ common scaffolds (benzene, indole, quinoline, etc.)
+- **Functional Groups:** 50+ groups organized by category (acids, amines, ethers, etc.)
+- **Linkers:** Alkyl, ether, amide, ester, triazole linkers (for fragment linking)
+- **Bioisosteres:** Suggested replacements (e.g., COOH → tetrazole, benzene → pyridine)
+
+**User Libraries:**
+- Save custom fragments to personal library
+- Tag and search saved structures
+- Import libraries from SDF files
+- Export libraries for sharing
+
+**R-Group Enumeration:**
+- Define attachment points on scaffold
+- Upload or select R-groups from library
+- Automatically enumerate all combinations
+- Generate virtual library (up to 10,000 compounds)
+- Export as multi-conformer SDF
+
+---
+
+### A1.3 API Endpoints
+
+```http
+POST /api/v1/builder/2d/create
+POST /api/v1/builder/2d/to_3d
+POST /api/v1/builder/3d/create
+POST /api/v1/builder/3d/optimize
+POST /api/v1/builder/3d/conformers
+GET  /api/v1/builder/templates/list
+POST /api/v1/builder/library/save
+POST /api/v1/builder/enumerate_rgroups
+```
+
+**Example: Generate 3D from 2D Sketch**
+```json
+POST /api/v1/builder/2d/to_3d
+{
+  "smiles": "CC(=O)Nc1ccc(O)cc1",
+  "method": "etkdg",
+  "num_conformers": 10,
+  "minimize": true,
+  "force_field": "mmff94"
+}
+
+Response:
+{
+  "ligand_id": "uuid",
+  "conformers": [
+    {
+      "conformer_id": 1,
+      "energy": -45.3,
+      "file_url": "https://storage/conformer_1.mol2"
+    }
+  ],
+  "lowest_energy_conformer_id": 1
+}
+```
+
+---
+
+## A2. Molecular Preparation Module
+
+### A2.1 Overview & Purpose
+
+The Preparation Module automates and validates the cleaning of proteins and ligands for molecular docking, replicating workflows from AutoDock Tools (ADT) and Schrödinger's Protein Preparation Wizard. All preparation steps are transparent, reproducible, and include quality control metrics.
+
+**Key Differences from Raw Structures:**
+- PDB files from databases often contain issues: missing atoms, incorrect protonation, steric clashes, alternate conformations, crystallographic waters, ions, and cofactors
+- Proper preparation is critical for docking accuracy
+
+---
+
+### A2.2 Protein Preparation Workflow
+
+#### Step 1: Structure Import & Validation
+
+**Input Sources:**
+- PDB ID (fetch from RCSB)
+- AlphaFold DB accession
+- Local PDB file upload
+- Result from homology modeling module
+
+**Initial Checks:**
+- Parse PDB/mmCIF format (validate with Biopython)
+- Identify chains, residues, heteroatoms
+- Detect missing residues/atoms from SEQRES record
+- Flag non-standard residues (modified AAs, ligands)
+- Check for alternate conformations (A/B occupancy)
+
+**Quality Report:**
+```json
+{
+  "structure_id": "uuid",
+  "pdb_id": "1ABC",
+  "resolution": 2.1,
+  "method": "X-ray",
+  "chains": ["A", "B"],
+  "issues": [
+    {
+      "type": "missing_residues",
+      "chain": "A",
+      "residues": [45, 46, 47],
+      "severity": "warning"
+    },
+    {
+      "type": "alternate_conformations",
+      "chain": "A",
+      "residues": [123, 145],
+      "severity": "info"
+    }
+  ]
+}
+```
+
+#### Step 2: Cleaning Operations
+
+**User-Configurable Options:**
+
+**Remove Components:**
+- [ ] Waters (keep crystallographic waters within X Å of ligand/protein)
+- [ ] Ions (Na+, Cl-, Mg2+, etc.)
+- [ ] Cofactors (NAD, FAD, ATP, etc.) - selective removal
+- [ ] Other heteroatoms (glycerol, sulfate, etc.)
+- [ ] Alternate conformations (keep highest occupancy)
+
+**Chain Selection:**
+- Select specific chains for docking (multi-chain support)
+- Remove all but biological assembly (vs. crystallographic asymmetric unit)
+
+**Missing Atom Reconstruction:**
+- Add missing heavy atoms (based on residue templates)
+- Add missing loops (short loops only, < 5 residues) using MODELLER-like approach
+- Flag long missing regions as "gap" (cannot be reliably modeled)
+
+**Operations:**
+```python
+# Pseudo-code workflow
+structure = load_pdb("1ABC")
+structure = remove_waters(structure, distance_cutoff=5.0)
+structure = remove_heteroatoms(structure, keep=["NAD"])
+structure = select_chains(structure, chains=["A"])
+structure = resolve_alternate_conformations(structure, method="highest_occupancy")
+structure = add_missing_atoms(structure, residue_templates)
+```
+
+#### Step 3: Hydrogen Addition
+
+**Protonation Methods:**
+- **REDUCE:** Fast, rule-based (default)
+- **PDB2PQR:** Propka-based pKa prediction, pH-dependent
+- **H++ Server Integration:** Web service for optimal protonation (slower, more accurate)
+
+**Parameters:**
+- Target pH (default: 7.4)
+- Ionic strength (default: 0.15 M)
+- Flip Asn/Gln/His side chains to optimize H-bonding
+
+**Output:**
+- Protein with all hydrogens added
+- Protonation state report (e.g., "HIS 57 is HID, HIS 102 is HIE")
+
+#### Step 4: Charge Assignment
+
+**Force Field Selection:**
+- **AMBER (ff14SB, ff19SB):** Recommended for proteins
+- **CHARMM36:** Alternative
+- **Gasteiger:** Fast, empirical (for quick docking)
+- **User-Defined:** Upload custom parameter files
+
+**Partial Charges:**
+- Assign partial charges to all atoms
+- Validate total charge (should match expected protein charge)
+- Display charge distribution map (highlight charged residues)
+
+#### Step 5: Geometry Optimization
+
+**Energy Minimization:**
+- Algorithm: Steepest descent → Conjugate gradient
+- Steps: 500–5,000 (user-configurable)
+- Constraints: Fix backbone (optional), fix residues > X Å from binding site
+- Convergence: Energy change < 0.1 kcal/mol
+
+**Clash Detection:**
+- Identify steric clashes (atoms < 2.0 Å apart)
+- Auto-resolve by side chain rotamer adjustment or minimization
+- Flag unresolved clashes (may indicate structural issues)
+
+**Quality Metrics:**
+- Ramachandran plot (% residues in favored/allowed/outlier regions)
+- Rotamer outliers (% non-standard chi angles)
+- Clash score (number of overlaps > 0.4 Å)
+
+#### Step 6: Binding Site Preparation
+
+**Pocket-Specific Prep:**
+- If pocket coordinates provided (from pocket detection module):
+  - Keep all residues within X Å of pocket center (default: 10 Å)
+  - Optionally remove residues > Y Å away (reduce file size)
+- Generate docking box automatically (based on pocket geometry)
+- Identify flexible residues (user can select for flexible docking)
+
+**Flexible Receptor Setup:**
+- User selects residues to treat as flexible
+- Generate rotatable bond definitions (for AutoDock Vina)
+- Validate flexibility (warn if > 10 rotatable bonds, slow docking)
+
+#### Step 7: Export & Validation
+
+**Output Formats:**
+- PDBQT (AutoDock format, with charges and atom types)
+- PDB (standard format, with hydrogens)
+- MOL2 (with charges, for other docking software)
+- PDBQT includes: Gasteiger charges, AutoDock atom types (HD, OA, NA, etc.), root and rotatable bonds
+
+**Final Validation:**
+- Check for atoms with undefined parameters (flag as error)
+- Verify total charge is reasonable (± 5e from expected)
+- Generate preparation report (PDF or HTML)
+
+**Preparation Report Contents:**
+- Original structure info (PDB ID, resolution)
+- List of removed components
+- Protonation states
+- Charge assignment summary
+- Geometry optimization results (energy, Ramachandran, clashes)
+- Docking box parameters (if applicable)
+
+---
+
+### A2.3 Ligand Preparation Workflow
+
+#### Step 1: Input & Validation
+
+**Input Sources:**
+- SMILES string (from builder or text input)
+- SDF/MOL/MOL2 file upload
+- PubChem CID
+- ChEMBL ID
+- Drawn in 2D/3D builder
+
+**Validation:**
+- SMILES sanitization (RDKit)
+- Check for invalid valences, disconnected fragments
+- Detect reactive groups (flag but don't reject)
+- Calculate basic properties (MW, logP, HBD/HBA)
+
+#### Step 2: 3D Coordinate Generation
+
+**Methods:**
+- **ETKDG:** Recommended, uses experimental torsion knowledge
+- **Distance Geometry:** Classical method
+- **RDKit Embed:** Fast, lower quality
+
+**Conformer Ensemble:**
+- Generate N conformers (default: 10, range: 1–100)
+- Energy minimize each conformer (MMFF94 or UFF)
+- Cluster by RMSD (threshold: 0.5 Å)
+- Return M diverse conformers (M ≤ N)
+
+#### Step 3: Charge Calculation
+
+**Methods:**
+- **Gasteiger:** Fast, adequate for docking
+- **AM1-BCC:** Semi-empirical QM (via OpenEye or Antechamber)
+- **MMFF94:** Force field partial charges
+- **User Upload:** Custom charges from QM calculation
+
+**Charge Distribution:**
+- Visualize partial charges on atoms (color-coded)
+- Display total molecular charge
+- Warn if highly charged (|Q| > 2)
+
+#### Step 4: Ionization State Handling
+
+**pKa Prediction:**
+- Use Chemaxon-like pKa calculator or RDKit
+- Determine protonation state at target pH (default: 7.4)
+- Generate tautomers (keto-enol, imine-enamine, etc.)
+
+**User Options:**
+- [ ] Auto-select most probable state at pH 7.4
+- [ ] Generate all relevant ionization states (for ensemble docking)
+- [ ] Use user-defined protonation
+
+**Output:**
+- Multiple ligand variants (neutral, zwitterionic, charged forms)
+- Label with predicted population at target pH
+
+#### Step 5: Stereoisomer Enumeration
+
+**Stereochemistry:**
+- Detect undefined chiral centers
+- Offer to enumerate all stereoisomers (up to 2^N, max 32 isomers)
+- User can specify known stereochemistry (R/S, E/Z)
+
+**Docking Strategy:**
+- Dock all stereoisomers separately
+- Or fix stereochemistry based on experimental data
+
+#### Step 6: Energy Minimization
+
+**Force Fields:**
+- MMFF94 (default, best for drug-like molecules)
+- UFF (universal, less accurate)
+- GAFF (for compatibility with AMBER)
+
+**Minimization:**
+- Algorithm: Conjugate gradient
+- Convergence: RMS gradient < 0.1 kcal/mol/Å
+- Max steps: 1,000
+
+**Validation:**
+- Check for strained bonds (bond length > 1.8 Å or < 0.8 Å)
+- Check for strained angles (> 30° deviation from ideal)
+- Flag if minimization doesn't converge
+
+#### Step 7: Rotatable Bond Definition
+
+**Torsion Analysis:**
+- Identify all rotatable bonds (single bonds, not in rings)
+- Exclude terminal bonds (e.g., CH3 rotation)
+- Highlight bonds on structure (user can manually adjust)
+
+**Flexibility Settings:**
+- Default: All rotatable bonds free
+- User can freeze specific bonds (constrain conformation)
+- Warn if > 15 rotatable bonds (docking may be slow/unreliable)
+
+#### Step 8: Export & Summary
+
+**Output Formats:**
+- PDBQT (for AutoDock Vina)
+- MOL2 (with charges)
+- SDF (multi-conformer)
+- SMILES (canonical)
+
+**Preparation Summary:**
+```json
+{
+  "ligand_id": "uuid",
+  "input_smiles": "CC(=O)Nc1ccc(O)cc1",
+  "canonical_smiles": "CC(=O)Nc1ccc(O)cc1",
+  "molecular_weight": 151.16,
+  "logp": 0.89,
+  "hbd": 2,
+  "hba": 2,
+  "rotatable_bonds": 2,
+  "formal_charge": 0,
+  "ionization_state": "neutral at pH 7.4",
+  "conformers_generated": 10,
+  "lowest_energy_conformer": 1,
+  "energy_kcal_mol": -12.3,
+  "preparation_warnings": []
+}
+```
+
+---
+
+### A2.4 Integrated Preparation Wizard
+
+**Guided Workflow:**
+
+1. **Select Preparation Type:**
+   - [ ] Protein only
+   - [ ] Ligand only
+   - [ ] Protein + Ligand (co-crystallized complex)
+
+2. **Upload/Select Structures**
+
+3. **Review Automated Detection:**
+   - Display detected issues (missing atoms, alternate conformations, etc.)
+   - User confirms or modifies suggested fixes
+
+4. **Configure Parameters:**
+   - Preset profiles: "Quick" (fast, defaults), "Standard" (recommended), "Thorough" (all checks)
+   - Advanced users can customize each step
+
+5. **Execute Preparation:**
+   - Progress bar with real-time step updates
+   - Estimated time: 30 seconds (ligand) to 5 minutes (large protein)
+
+6. **Review Results:**
+   - Side-by-side comparison: before/after structures
+   - Quality metrics dashboard (Ramachandran, clashes, energy)
+   - Download prepared files or send directly to docking module
+
+7. **Save Preparation Protocol:**
+   - Export parameters as JSON (for reproducibility)
+   - Apply same protocol to batch of structures
+
+---
+
+### A2.5 API Endpoints
+
+```http
+POST /api/v1/prep/protein/analyze
+POST /api/v1/prep/protein/clean
+POST /api/v1/prep/protein/add_hydrogens
+POST /api/v1/prep/protein/assign_charges
+POST /api/v1/prep/protein/minimize
+POST /api/v1/prep/protein/export
+
+POST /api/v1/prep/ligand/analyze
+POST /api/v1/prep/ligand/generate_3d
+POST /api/v1/prep/ligand/assign_charges
+POST /api/v1/prep/ligand/enumerate_states
+POST /api/v1/prep/ligand/minimize
+POST /api/v1/prep/ligand/export
+
+POST /api/v1/prep/wizard/start
+GET  /api/v1/prep/wizard/{session_id}/status
+```
+
+**Example: Protein Preparation Full Workflow**
+```json
+POST /api/v1/prep/protein/clean
+{
+  "structure_id": "uuid",
+  "remove_waters": true,
+  "water_cutoff_distance": 5.0,
+  "remove_ions": true,
+  "keep_heteroatoms": ["NAD"],
+  "select_chains": ["A"],
+  "resolve_alternate_conformations": "highest_occupancy",
+  "add_missing_atoms": true,
+  "target_ph": 7.4,
+  "charge_method": "amber_ff14sb",
+  "minimize": true,
+  "minimization_steps": 1000,
+  "output_format": "pdbqt"
+}
+
+Response:
+{
+  "job_id": "uuid",
+  "status": "completed",
+  "prepared_structure_url": "https://storage/prepared_1ABC.pdbqt",
+  "quality_metrics": {
+    "ramachandran_favored": 96.5,
+    "ramachandran_outliers": 0.2,
+    "clash_score": 2.3,
+    "rotamer_outliers": 1.1
+  },
+  "preparation_report_url": "https://storage/prep_report_1ABC.pdf"
+}
+```
+
+---
+
+### A2.6 Quality Control & Validation
+
+**Automated Checks:**
+
+**For Proteins:**
+- ✓ All atoms have defined force field parameters
+- ✓ No severe clashes (< 1.5 Å overlap)
+- ✓ Ramachandran outliers < 2%
+- ✓ Total charge within expected range
+- ✓ No undefined residues
+
+**For Ligands:**
+- ✓ Valid 3D geometry (no planar sp3 carbons)
+- ✓ All atoms within van der Waals radii
+- ✓ Reasonable bond lengths (within 20% of ideal)
+- ✓ No undefined atom types for docking
+
+**User Alerts:**
+- Red: Critical issues (preparation failed or likely to cause docking errors)
+- Yellow: Warnings (preparation succeeded but with caveats)
+- Green: All checks passed
+
+**Comparison with Reference Tools:**
+- Validate against AutoDock Tools output (for proteins/ligands prepared with same settings)
+- Unit tests with known structures (e.g., re-prepare 1ABC, compare PDBQT files)
+
+---
+
+### A2.7 UI/UX for Builder & Preparation
+
+**Ligand Builder Interface:**
+
+```
+┌────────────────────────────────────────────────────────┐
+│  Ligand Builder                          [2D] [3D]     │
+├────────────────────────────────────────────────────────┤
+│  [Drawing Toolbar]                                     │
+│  ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐                             │
+│  │C│ │N│ │O│ │─│ │═│ │⌂│  [Templates▼]               │
+│  └─┘ └─┘ └─┘ └─┘ └─┘ └─┘                             │
+│                                                        │
+│  ┌──────────────────────────┐  ┌────────────────────┐ │
+│  │                          │  │ Properties         │ │
+│  │    [2D Canvas]           │  │ Formula: C8H9NO2   │ │
+│  │                          │  │ MW: 151.16        │ │
+│  │      Drawing Area        │  │ LogP: 0.89        │ │
+│  │                          │  │ HBD: 2, HBA: 2    │ │
+│  │                          │  │ Rotatable: 2      │ │
+│  └──────────────────────────┘  │ SMILES:           │ │
+│                                 │ CC(=O)Nc1ccc(O)cc1│ │
+│  [Undo] [Redo] [Clear]         └────────────────────┘ │
+│  [Generate 3D] [Optimize] [Save to Library]          │
+└────────────────────────────────────────────────────────┘
+```
+
+**Preparation Wizard Interface:**
+
+```
+┌────────────────────────────────────────────────────────┐
+│  Preparation Wizard                        Step 2 of 5 │
+├────────────────────────────────────────────────────────┤
+│  ◉ Structure Analysis  →  ◉ Cleaning  →  ○ Hydrogens  │
+│                            ○ Charges   →  ○ Export     │
+├────────────────────────────────────────────────────────┤
+│  Detected Issues:                                      │
+│  ⚠ 15 water molecules found                            │
+│  ⚠ 2 alternate conformations (residues 45, 67)        │
+│  ⚠ Missing residues 102-105 in chain A                │
+│                                                        │
+│  Recommended Actions:                                  │
+│  [✓] Remove waters beyond 5Å of binding site          │
+│  [✓] Select highest occupancy conformations           │
+│  [ ] Model missing loop (experimental)                │
+│                                                        │
+│  [Back] [Skip] [Apply Recommended] [Next]             │
+└────────────────────────────────────────────────────────┘
+```
+
+---
+
+### A2.8 Integration with Existing Modules
+
+**Workflow Integration:**
+
+1. **Builder → Preparation → Docking:**
+   - User draws ligand in builder
+   - Click "Prepare for Docking" → auto-opens preparation wizard
+   - Prepared ligand sent directly to docking module
+
+2. **PDB Import → Preparation → Pocket Detection:**
+   - User uploads protein structure
+   - Preparation wizard runs
+   - Prepared structure automatically used in pocket detection
+
+3. **Batch Preparation:**
+   - Upload SDF with 1,000 ligands
+   - Apply same preparation protocol to all
+   - Queue for high-throughput docking
+
+**Data Flow:**
+```
+[Ligand Builder] → [Preparation] → [Docking] → [Results]
+       ↓                ↓              ↓
+   [Save to Library] [QC Report] [Pose Analysis]
+```
+
+---
+
+### A2.9 Technology Stack Additions
+
+**Frontend:**
+- **Ketcher:** 2D molecular editor (React component)
+- **RDKit.js:** Client-side SMILES validation, 2D layout
+- **Three.js:** 3D builder enhancements (beyond NGL)
+
+**Backend:**
+- **RDKit (Python):** 3D generation, conformer search, minimization
+- **Open Babel:** Format conversions, 2D→3D
+- **PDB2PQR:** Protonation state assignment
+- **REDUCE:** Fast hydrogen addition
+- **MGLTools (containerized):** Prepare_receptor4.py, Prepare_ligand4.py for PDBQT generation
+- **AmberTools (Antechamber):** AM1-BCC charge calculation
+
+---
+
+### A2.10 Validation & Testing
+
+**Unit Tests:**
+- Test preparation of 100 diverse PDB structures (coverage of common issues)
+- Compare PDBQT output with AutoDock Tools reference
+- Validate 2D→3D conversion accuracy (RMSD vs. commercial tools)
+
+**Integration Tests:**
+- End-to-end: Build ligand → Prepare → Dock → Verify pose
+- Batch preparation: 1,000 ligands, check all pass validation
+
+**Performance Benchmarks:**
+- Ligand preparation: < 10 seconds per molecule
+- Protein preparation: < 2 minutes for 500-residue protein
+- Conformer generation: < 30 seconds for 50 conformers
+
+---
+
+## A3. Updated Module Dependencies
+
+**Modified Sections:**
+
+**Section 7.6 (Molecular Docking Module):**
+- **Add prerequisite:** "Protein and ligand must be prepared via Preparation Module or uploaded as pre-prepared PDBQT files"
+- **Update workflow:** Step 1 becomes "Select prepared protein and ligand(s) or prepare now"
+
+**Section 7.7 (Visualization Module):**
+- **Add feature:** "Builder integration: visualize drawn molecules in 3D during construction"
+- **Add feature:** "Preparation comparison: overlay before/after structures"
+
+**Section 4 (Architecture):**
+- **Add service:** "Builder & Preparation Service" as peer to Sequence, Structure, Docking services
+
+---
+
+## A4. API Summary Table
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/builder/2d/create` | POST | Create new 2D sketch |
+| `/builder/2d/to_3d` | POST | Generate 3D from 2D |
+| `/builder/3d/optimize` | POST | Energy minimize 3D structure |
+| `/builder/library/save` | POST | Save molecule to user library |
+| `/prep/protein/analyze` | POST | Analyze protein structure issues |
+| `/prep/protein/clean` | POST | Execute cleaning operations |
+| `/prep/ligand/generate_3d` | POST | Generate 3D coordinates |
+| `/prep/ligand/assign_charges` | POST | Calculate partial charges |
+| `/prep/wizard/start` | POST | Start guided preparation workflow |
+
+---
+
+**End of Addendum**
+
+---
+
+## Integration Checklist for Development Team
+
+- [ ] Update architecture diagram (Section 4) to include Builder & Prep Service
+- [ ] Extend database schema with `builder_sessions` and `prep_jobs` tables
+- [ ] Implement Ketcher integration in React frontend
+- [ ] Containerize MGLTools and PDB2PQR for preparation pipeline
+- [ ] Create API endpoints for all builder and prep operations
+- [ ] Build preparation wizard UI components
+- [ ] Write integration tests for builder → prep → dock workflow
+- [ ] Update user documentation with builder and preparation tutorials
+- [ ] Add tooltips and inline help for all preparation parameters
+- [ ] Validate against AutoDock Tools outputs (regression testing)
+
+
+
+
+**End of Software Development Document**
