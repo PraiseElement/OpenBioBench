@@ -171,7 +171,7 @@ class ADMETService:
             "value": round(ic50, 1),
             "unit": "uM",
             "confidence": "medium",
-            "risk": risk
+            "interpretation": risk  # Fixed: changed from 'risk' to 'interpretation'
         }
     
     @staticmethod

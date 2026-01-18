@@ -20,9 +20,9 @@ class ADMETRequest(BaseModel):
 class PropertyPrediction(BaseModel):
     """Single property prediction with confidence."""
     value: float
-    unit: Optional[str]
+    unit: Optional[str] = None
     confidence: str  # "low", "medium", "high"
-    interpretation: Optional[str]
+    interpretation: Optional[str] = None
 
 
 class PhysicochemicalProperties(BaseModel):
