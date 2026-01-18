@@ -5,6 +5,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlignLeft, ArrowLeft, Loader, Download, Search } from 'lucide-react';
+import { getApiUrl } from '../../config/api';
 
 export const SequenceModule: React.FC = () => {
   const [fastaInput, setFastaInput] = useState('');
@@ -32,7 +33,7 @@ MVLSAADKNNVKGIFTKIAGHAEEYGAETLERMFTTYPPTKTYFPHFDLSH`;
     
     try {
       const response = await fetch(
-        `http://localhost:8000/api/v1/database/uniprot/search/?query=${encodeURIComponent(searchQuery)}&limit=10`,
+        getApiUrl(`v1/database/uniprot/search/?query=${encodeURIComponent(searchQuery)}&limit=10`),
         { headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` } }
       );
       
@@ -50,7 +51,7 @@ MVLSAADKNNVKGIFTKIAGHAEEYGAETLERMFTTYPPTKTYFPHFDLSH`;
   const fetchSequence = async (accession: string) => {
     try {
       const response = await fetch(
-        `http://localhost:8000/api/v1/database/uniprot/${accession}`,
+        getApiUrl(`v1/database/uniprot/${accession}`),
         { headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` } }
       );
       
@@ -73,7 +74,7 @@ MVLSAADKNNVKGIFTKIAGHAEEYGAETLERMFTTYPPTKTYFPHFDLSH`;
     setAlignmentResult(null);
 
     try {
-      const response = await fetch('http://localhost:8000/api/v1/alignments/align', {
+      const response = await fetch(getApiUrl('v1/alignments/align'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
