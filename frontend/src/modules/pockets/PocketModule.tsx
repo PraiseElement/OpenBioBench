@@ -5,6 +5,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Target, ArrowLeft, Loader, Download, Upload, Search } from 'lucide-react';
+import { getApiUrl } from '../../config/api';
 
 export const PocketModule: React.FC = () => {
   const [pdbContent, setPdbContent] = useState('');
@@ -20,7 +21,7 @@ export const PocketModule: React.FC = () => {
     setError('');
     
     try {
-      const response = await fetch(`http://localhost:8000/api/v1/database/pdb/${pdbId}`, {
+      const response = await fetch(getApiUrl(`v1/database/pdb/${pdbId}`), {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` },
       });
       
@@ -40,7 +41,7 @@ export const PocketModule: React.FC = () => {
     setError('');
     
     try {
-      const response = await fetch(`http://localhost:8000/api/v1/database/alphafold/${uniprotId}`, {
+      const response = await fetch(getApiUrl(`v1/database/alphafold/${uniprotId}`), {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` },
       });
       
@@ -71,7 +72,7 @@ export const PocketModule: React.FC = () => {
     setPockets([]);
 
     try {
-      const response = await fetch('http://localhost:8000/api/v1/pockets/detect', {
+      const response = await fetch(getApiUrl('v1/pockets/detect'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -5,6 +5,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Wrench, ArrowLeft, Loader, Download, Upload, Search } from 'lucide-react';
+import { getApiUrl } from '../../config/api';
 
 export const PreparationModule: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'protein' | 'ligand'>('protein');
@@ -30,7 +31,7 @@ export const PreparationModule: React.FC = () => {
     setError('');
     
     try {
-      const response = await fetch(`http://localhost:8000/api/v1/database/pdb/${pdbId}`, {
+      const response = await fetch(getApiUrl(`v1/database/pdb/${pdbId}`), {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` },
       });
       
@@ -52,7 +53,7 @@ export const PreparationModule: React.FC = () => {
     setCleanedProtein(null);
     
     try {
-      const response = await fetch('http://localhost:8000/api/v1/preparation/protein/clean', {
+      const response = await fetch(getApiUrl('v1/preparation/protein/clean'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -83,7 +84,7 @@ export const PreparationModule: React.FC = () => {
     setPreparedLigand(null);
     
     try {
-      const response = await fetch('http://localhost:8000/api/v1/preparation/ligand/from_smiles', {
+      const response = await fetch(getApiUrl('v1/preparation/ligand/from_smiles'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

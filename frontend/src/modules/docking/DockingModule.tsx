@@ -5,6 +5,7 @@
 import React, { useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Database, ArrowLeft, Loader, Upload, Search } from 'lucide-react';
+import { getApiUrl } from '../../config/api';
 
 export const DockingModule: React.FC = () => {
   const [proteinPdb, setProteinPdb] = useState('');
@@ -29,7 +30,7 @@ export const DockingModule: React.FC = () => {
     setError('');
     
     try {
-      const response = await fetch(`http://localhost:8000/api/v1/database/pdb/${pdbId}`, {
+      const response = await fetch(getApiUrl(`v1/database/pdb/${pdbId}`), {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` },
       });
       
@@ -55,7 +56,7 @@ export const DockingModule: React.FC = () => {
     setError('');
     
     try {
-      const response = await fetch(`http://localhost:8000/api/v1/database/pubchem/${pubchemCid}`, {
+      const response = await fetch(getApiUrl(`v1/database/pubchem/${pubchemCid}`), {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` },
       });
       
@@ -90,7 +91,7 @@ export const DockingModule: React.FC = () => {
     
     // Try to prepare ligand and get SMILES
     try {
-      const response = await fetch('http://localhost:8000/api/v1/preparation/ligand/from_sdf', {
+      const response = await fetch(getApiUrl('v1/preparation/ligand/from_sdf'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -113,7 +114,7 @@ export const DockingModule: React.FC = () => {
 
   const calculateDockingBox = async (pdbContent: string) => {
     try {
-      const response = await fetch('http://localhost:8000/api/v1/preparation/docking_box', {
+      const response = await fetch(getApiUrl('v1/preparation/docking_box'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -148,7 +149,7 @@ export const DockingModule: React.FC = () => {
     setPoses([]);
 
     try {
-      const response = await fetch('http://localhost:8000/api/v1/docking/run', {
+      const response = await fetch(getApiUrl('v1/docking/run'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

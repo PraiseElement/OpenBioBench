@@ -5,6 +5,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { GitBranch, ArrowLeft, Loader, Download } from 'lucide-react';
+import { getApiUrl } from '../../config/api';
 
 export const PhylogenyModule: React.FC = () => {
   const [alignmentInput, setAlignmentInput] = useState('');
@@ -30,7 +31,7 @@ MSLSDKDKAAVRALWSKIGKSADAIGNDALSRMIVVYPQTKTYFSHWADLS`;
     setTreeResult(null);
 
     try {
-      const response = await fetch('http://localhost:8000/api/v1/phylogeny/infer', {
+      const response = await fetch(getApiUrl('v1/phylogeny/infer'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
